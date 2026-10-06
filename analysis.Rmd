@@ -1,0 +1,758 @@
+---
+title: "Control Estadístico de Procesos – Línea de Ensamble de Cubos Lego"
+subtitle: "Secciones 6 y 7: Estudio de Capacidad y Estabilidad Estadística"
+author: "Raúl Antonio Ruano Katz — versión de portafolio de un proyecto académico grupal"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# ============================================================
+# Configuración global del documento
+# ============================================================
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width  = 8,
+  fig.height = 5
+)
+```
+
+```{r librerias, include=FALSE}
+# ============================================================
+# Carga de librerías necesarias
+# ============================================================
+library(qcc)        # Cartas de control y análisis de capacidad
+library(SixSigma)   # Análisis Seis Sigma y capacidad de proceso
+library(ggplot2)    # Visualizaciones avanzadas
+library(dplyr)      # Manipulación de datos
+library(knitr)      # Tablas formateadas
+library(kableExtra) # Estilo adicional para tablas
+```
+
+```{r datos, include=FALSE}
+# ============================================================
+# Carga de datos: Tiempos de ciclo de ensamble (segundos)
+# Filas = muestras (subgrupos), Columnas = observaciones
+# ============================================================
+tiempos_lego <- data.frame(
+  Muestra = 1:10,
+  Obs1 = c(35.5, 34.8, 34.5, 35.2, 34.0, 36.5, 34.5, 34.4, 35.0, 35.2),
+  Obs2 = c(34.9, 34.8, 35.5, 33.1, 35.3, 34.8, 35.1, 34.7, 33.9, 33.0),
+  Obs3 = c(35.6, 36.6, 34.5, 33.3, 34.1, 35.1, 33.8, 34.4, 35.8, 33.7),
+  Obs4 = c(36.5, 35.8, 34.5, 34.4, 33.6, 33.6, 35.4, 36.9, 33.8, 35.2)
+)
+
+# Especificaciones del proceso
+LSE <- 40.0   # Límite de Especificación Superior (segundos)
+LIE <- 30.0   # Límite de Especificación Inferior (segundos)
+N   <- 35.0   # Valor Nominal / objetivo (segundos)
+n   <- 4      # Tamaño de subgrupo
+k   <- 10     # Número de subgrupos
+
+# Matriz numérica de observaciones (sin columna de Muestra)
+obs_matrix <- as.matrix(tiempos_lego[, c("Obs1", "Obs2", "Obs3", "Obs4")])
+
+# Vector de todas las observaciones individuales
+todos_datos <- as.vector(t(obs_matrix))
+```
+
+---
+
+# Estudio de Capacidad Integral
+
+El estudio de capacidad tiene como propósito determinar si el proceso de ensamble de cubos Lego es capaz de cumplir consistentemente con las especificaciones establecidas. La variable de interés es el tiempo de ciclo de ensamble (en segundos), con un valor nominal de **`r N` s**, un Límite de Especificación Inferior (LIE) de **`r LIE` s** y un Límite de Especificación Superior (LSE) de **`r LSE` s**.
+
+## Análisis de Estadística Descriptiva
+
+En esta sección se presenta un resumen estadístico de las `r n * k` observaciones individuales recopiladas durante las `r k` muestras del estudio.
+
+### Tabla de Datos Recopilados
+
+La siguiente tabla muestra las observaciones crudas organizadas por subgrupo, junto con la media ($\bar{X}$) y el rango ($R$) calculados para cada uno.
+
+```{r tabla-datos}
+# ============================================================
+# Construcción de la tabla de datos con medias y rangos
+# ============================================================
+tabla_resumen <- tiempos_lego %>%
+  rowwise() %>%
+  mutate(
+    Media_Xbar = round(mean(c(Obs1, Obs2, Obs3, Obs4)), 4),
+    Rango_R    = round(max(c(Obs1, Obs2, Obs3, Obs4)) -
+                       min(c(Obs1, Obs2, Obs3, Obs4)), 4)
+  ) %>%
+  ungroup()
+
+# Presentación de la tabla con formato
+tabla_resumen %>%
+  kable(
+    caption   = "Tabla 1. Observaciones de tiempo de ciclo por subgrupo (segundos)",
+    col.names = c("Muestra", "Obs. 1", "Obs. 2", "Obs. 3", "Obs. 4",
+                  "$\\bar{X}$", "$R$"),
+    align     = "c",
+    digits    = 4
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered", "condensed"),
+    full_width        = FALSE,
+    position          = "center"
+  ) %>%
+  column_spec(6:7, bold = TRUE, color = "#2C3E50") %>%
+  row_spec(0, bold = TRUE, background = "#2980B9", color = "white")
+```
+
+### Estadísticas Descriptivas Globales
+
+```{r estadisticas-descriptivas}
+# ============================================================
+# Cálculo de estadísticas descriptivas de los datos individuales
+# ============================================================
+
+# Media global (gran media)
+media_global <- mean(todos_datos)
+
+# Desviación estándar muestral (estimada a partir de datos individuales)
+sd_global <- sd(todos_datos)
+
+# Varianza muestral
+var_global <- var(todos_datos)
+
+# Mediana
+mediana_global <- median(todos_datos)
+
+# Valor mínimo y máximo
+min_global <- min(todos_datos)
+max_global <- max(todos_datos)
+
+# Coeficiente de variación (%)
+cv_global <- (sd_global / media_global) * 100
+
+# Tabla de estadísticas descriptivas
+estadisticas_df <- data.frame(
+  Estadístico = c(
+    "Número total de observaciones (N)",
+    "Media global ($\\bar{\\bar{X}}$)",
+    "Desviación estándar muestral ($s$)",
+    "Varianza muestral ($s^2$)",
+    "Mediana",
+    "Valor mínimo",
+    "Valor máximo",
+    "Coeficiente de variación (CV%)"
+  ),
+  Valor = c(
+    length(todos_datos),
+    round(media_global, 4),
+    round(sd_global,    4),
+    round(var_global,   4),
+    round(mediana_global, 4),
+    round(min_global,   4),
+    round(max_global,   4),
+    round(cv_global,    4)
+  )
+)
+
+estadisticas_df %>%
+  kable(
+    caption = "Tabla 2. Estadísticas descriptivas de los tiempos de ciclo individuales",
+    align   = c("l", "c"),
+    escape  = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width        = FALSE,
+    position          = "center"
+  ) %>%
+  row_spec(0, bold = TRUE, background = "#2980B9", color = "white")
+```
+
+Se observa que la media global del proceso ($\bar{\bar{X}}$ = **`r round(media_global, 4)` s**) se encuentra próxima al valor nominal de `r N` s. La desviación estándar estimada ($s$ = **`r round(sd_global, 4)` s**) y la varianza ($s^2$ = **`r round(var_global, 4)` s²**) cuantifican la dispersión inherente del proceso. El coeficiente de variación del **`r round(cv_global, 2)`%** sugiere una dispersión relativamente baja en relación con la media.
+
+### Histograma de Distribución respecto a las Especificaciones
+
+```{r histograma, fig.cap="Figura 1. Histograma de los tiempos de ciclo individuales con límites de especificación"}
+# ============================================================
+# Histograma de datos individuales con LIE, LSE y Nominal
+# ============================================================
+df_hist <- data.frame(tiempo = todos_datos)
+
+ggplot(df_hist, aes(x = tiempo)) +
+  # Histograma con densidad de frecuencia
+  geom_histogram(
+    aes(y = after_stat(density)),
+    binwidth = 0.5,
+    fill     = "#3498DB",
+    color    = "white",
+    alpha    = 0.85
+  ) +
+  # Curva de densidad normal superpuesta
+  stat_function(
+    fun  = dnorm,
+    args = list(mean = media_global, sd = sd_global),
+    color = "#2C3E50",
+    linewidth = 1.1,
+    linetype  = "solid"
+  ) +
+  # Límite de Especificación Inferior (LIE)
+  geom_vline(xintercept = LIE, color = "#E74C3C", linewidth = 1.2, linetype = "dashed") +
+  # Límite de Especificación Superior (LSE)
+  geom_vline(xintercept = LSE, color = "#E74C3C", linewidth = 1.2, linetype = "dashed") +
+  # Valor Nominal / objetivo
+  geom_vline(xintercept = N,   color = "#27AE60", linewidth = 1.2, linetype = "dotdash") +
+  # Media global del proceso
+  geom_vline(xintercept = media_global, color = "#8E44AD", linewidth = 1.0, linetype = "longdash") +
+  # Etiquetas de las líneas de referencia
+  annotate("text", x = LIE - 0.15, y = Inf,
+           label = paste0("LIE = ", LIE), color = "#E74C3C",
+           angle = 90, vjust = 1.5, hjust = 1.1, size = 3.5, fontface = "bold") +
+  annotate("text", x = LSE + 0.15, y = Inf,
+           label = paste0("LSE = ", LSE), color = "#E74C3C",
+           angle = 90, vjust = -0.5, hjust = 1.1, size = 3.5, fontface = "bold") +
+  annotate("text", x = N + 0.15, y = Inf,
+           label = paste0("N = ", N), color = "#27AE60",
+           angle = 90, vjust = -0.5, hjust = 1.1, size = 3.5, fontface = "bold") +
+  annotate("text", x = media_global + 0.15, y = Inf,
+           label = paste0("X̄ = ", round(media_global, 2)), color = "#8E44AD",
+           angle = 90, vjust = -0.5, hjust = 1.1, size = 3.5, fontface = "bold") +
+  # Escalas y etiquetas
+  scale_x_continuous(
+    limits = c(LIE - 2, LSE + 2),
+    breaks = seq(LIE - 2, LSE + 2, by = 1)
+  ) +
+  labs(
+    title    = "Distribución de los Tiempos de Ciclo de Ensamble",
+    subtitle = paste0("n = ", length(todos_datos), " observaciones individuales | ",
+                      "LIE = ", LIE, " s  |  LSE = ", LSE, " s  |  N = ", N, " s"),
+    x        = "Tiempo de ciclo (segundos)",
+    y        = "Densidad de frecuencia"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray40", size = 10),
+    panel.grid.minor = element_blank()
+  )
+```
+
+El histograma revela que la distribución de los tiempos de ciclo se aproxima a una distribución normal, centrada en torno a la media global de `r round(media_global, 2)` s. Se aprecia que todas las observaciones se encuentran dentro de los límites de especificación (LIE = `r LIE` s, LSE = `r LSE` s), lo cual constituye un indicador preliminar favorable de la capacidad del proceso. La media del proceso se ubica ligeramente por encima del valor nominal de `r N` s.
+
+---
+
+## Cálculo y Análisis de los Índices de Capacidad del Proceso
+
+Los índices de capacidad permiten cuantificar de manera objetiva la relación existente entre la variabilidad natural del proceso y el ancho de la ventana de tolerancia definida por las especificaciones técnicas.
+
+### Estimación de la Desviación Estándar del Proceso ($\hat{\sigma}$)
+
+Para el cálculo de los índices de capacidad se emplea la desviación estándar estimada a partir del rango medio ($\bar{R}$), método estadísticamente apropiado cuando se trabaja con subgrupos racionales. La constante $d_2$ corresponde a un tamaño de subgrupo $n = 4$.
+
+```{r sigma-estimada}
+# ============================================================
+# Estimación de sigma mediante el rango medio (R-bar / d2)
+# Constante d2 para n=4 es 2.059
+# ============================================================
+d2 <- 2.059   # Constante d2 para n = 4 (tabla de constantes de control)
+
+# Cálculo del rango de cada subgrupo
+rangos <- apply(obs_matrix, 1, function(x) max(x) - min(x))
+
+# Rango medio
+R_bar <- mean(rangos)
+
+# Sigma estimada del proceso
+sigma_est <- R_bar / d2
+
+# Gran media (media de las medias de subgrupo)
+X_doble_barra <- mean(apply(obs_matrix, 1, mean))
+
+# Mostrar resultados intermedios
+cat(sprintf("Rangos por subgrupo:  %s\n",
+            paste(round(rangos, 4), collapse = ", ")))
+cat(sprintf("Rango medio (R̄):      %.4f s\n", R_bar))
+cat(sprintf("Constante d2 (n=4):   %.3f\n",   d2))
+cat(sprintf("Sigma estimada (σ̂):   %.4f s\n", sigma_est))
+cat(sprintf("Gran media (X̄̄):       %.4f s\n", X_doble_barra))
+```
+
+### Cálculo de los Índices de Capacidad
+
+```{r indices-capacidad}
+# ============================================================
+# Cálculo de índices de capacidad del proceso
+# ============================================================
+
+# Índice de capacidad potencial Cp
+# Mide si el proceso tiene suficiente espacio dentro de las especificaciones
+Cp  <- (LSE - LIE) / (6 * sigma_est)
+
+# Índice de capacidad inferior Cpi (desempeño respecto al LIE)
+Cpi <- (X_doble_barra - LIE) / (3 * sigma_est)
+
+# Índice de capacidad superior Cps (desempeño respecto al LSE)
+Cps <- (LSE - X_doble_barra) / (3 * sigma_est)
+
+# Índice de capacidad real Cpk (el mínimo entre Cpi y Cps)
+Cpk <- min(Cpi, Cps)
+
+# Tabla de resultados de índices de capacidad
+indices_df <- data.frame(
+  Índice       = c("$C_p$", "$C_{pi}$", "$C_{ps}$", "$C_{pk}$"),
+  Fórmula      = c(
+    "$\\frac{LSE - LIE}{6\\hat{\\sigma}}$",
+    "$\\frac{\\bar{\\bar{X}} - LIE}{3\\hat{\\sigma}}$",
+    "$\\frac{LSE - \\bar{\\bar{X}}}{3\\hat{\\sigma}}$",
+    "$\\min(C_{pi},\\, C_{ps})$"
+  ),
+  Valor        = round(c(Cp, Cpi, Cps, Cpk), 4),
+  Interpretación = c(
+    "Capacidad potencial (amplitud de tolerancia vs. variabilidad natural)",
+    "Capacidad respecto al límite inferior de especificación",
+    "Capacidad respecto al límite superior de especificación",
+    "Capacidad real considerando el centrado del proceso"
+  )
+)
+
+indices_df %>%
+  kable(
+    caption = "Tabla 3. Índices de capacidad del proceso de ensamble",
+    align   = c("c", "c", "c", "l"),
+    escape  = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width        = TRUE,
+    position          = "center"
+  ) %>%
+  column_spec(3, bold = TRUE, color = "#2C3E50") %>%
+  row_spec(0, bold = TRUE, background = "#2980B9", color = "white") %>%
+  row_spec(4, bold = TRUE, background = "#EBF5FB")
+```
+
+### Visualización Gráfica de la Capacidad
+
+```{r grafico-capacidad, fig.cap="Figura 2. Análisis gráfico de capacidad del proceso"}
+# ============================================================
+# Gráfico de capacidad con curva normal y especificaciones
+# ============================================================
+
+# Rango de valores para la curva normal del proceso
+x_vals <- seq(LIE - 3, LSE + 3, length.out = 400)
+y_vals <- dnorm(x_vals, mean = X_doble_barra, sd = sigma_est)
+
+df_curva <- data.frame(x = x_vals, y = y_vals)
+
+# Cálculo de áreas fuera de especificaciones (para anotación)
+pct_fuera_inf <- round(pnorm(LIE, mean = X_doble_barra, sd = sigma_est) * 100, 4)
+pct_fuera_sup <- round((1 - pnorm(LSE, mean = X_doble_barra, sd = sigma_est)) * 100, 4)
+pct_dentro    <- round(100 - pct_fuera_inf - pct_fuera_sup, 4)
+
+ggplot(df_curva, aes(x = x, y = y)) +
+  # Área dentro de especificaciones (verde)
+  geom_area(
+    data = subset(df_curva, x >= LIE & x <= LSE),
+    fill = "#27AE60", alpha = 0.25
+  ) +
+  # Área fuera de LIE (rojo izquierda)
+  geom_area(
+    data = subset(df_curva, x < LIE),
+    fill = "#E74C3C", alpha = 0.45
+  ) +
+  # Área fuera de LSE (rojo derecha)
+  geom_area(
+    data = subset(df_curva, x > LSE),
+    fill = "#E74C3C", alpha = 0.45
+  ) +
+  # Curva normal del proceso
+  geom_line(color = "#2C3E50", linewidth = 1.3) +
+  # Líneas de especificación
+  geom_vline(xintercept = LIE, color = "#C0392B", linewidth = 1.2, linetype = "dashed") +
+  geom_vline(xintercept = LSE, color = "#C0392B", linewidth = 1.2, linetype = "dashed") +
+  # Nominal y media del proceso
+  geom_vline(xintercept = N,               color = "#27AE60", linewidth = 1.1, linetype = "dotdash") +
+  geom_vline(xintercept = X_doble_barra,   color = "#8E44AD", linewidth = 1.1, linetype = "longdash") +
+  # Etiquetas
+  annotate("text", x = LIE, y = max(y_vals) * 0.95,
+           label = paste0("LIE\n", LIE, " s"), color = "#C0392B", hjust = 1.1,
+           size = 3.5, fontface = "bold") +
+  annotate("text", x = LSE, y = max(y_vals) * 0.95,
+           label = paste0("LSE\n", LSE, " s"), color = "#C0392B", hjust = -0.1,
+           size = 3.5, fontface = "bold") +
+  annotate("text", x = X_doble_barra, y = max(y_vals) * 0.60,
+           label = paste0("X̄̄ = ", round(X_doble_barra, 2), " s"),
+           color = "#8E44AD", hjust = -0.1, size = 3.5, fontface = "bold") +
+  # Anotación de índices de capacidad
+  annotate("label",
+           x = LIE + 0.3, y = max(y_vals) * 0.40,
+           label = paste0(
+             "Cp  = ", round(Cp,  4), "\n",
+             "Cpi = ", round(Cpi, 4), "\n",
+             "Cps = ", round(Cps, 4), "\n",
+             "Cpk = ", round(Cpk, 4)
+           ),
+           hjust = 0, size = 3.8, color = "#2C3E50",
+           fill = "lightyellow", label.padding = unit(0.5, "lines")) +
+  scale_x_continuous(
+    limits = c(LIE - 2.5, LSE + 2.5),
+    breaks = seq(LIE - 2, LSE + 2, by = 1)
+  ) +
+  labs(
+    title    = "Gráfico de Capacidad del Proceso de Ensamble",
+    subtitle = paste0("Área dentro de especificaciones: ", pct_dentro, "% | ",
+                      "Fuera LIE: ", pct_fuera_inf, "% | ",
+                      "Fuera LSE: ", pct_fuera_sup, "%"),
+    x        = "Tiempo de ciclo (segundos)",
+    y        = "Densidad de probabilidad"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray40", size = 10),
+    panel.grid.minor = element_blank()
+  )
+```
+
+### Interpretación de los Índices de Capacidad
+
+A partir de los resultados obtenidos se presenta el siguiente análisis:
+
+**1. Índice de Capacidad Potencial ($C_p$ = `r round(Cp, 4)`):**
+El $C_p$ mide exclusivamente la relación entre la amplitud de la tolerancia (LSE – LIE = `r LSE - LIE` s) y la dispersión natural del proceso ($6\hat{\sigma}$ = `r round(6 * sigma_est, 4)` s), sin tener en cuenta el centrado. Un valor de $C_p$ = **`r round(Cp, 4)`** indica que el proceso posee una capacidad potencial **`r ifelse(Cp >= 1.33, "satisfactoria (proceso de primera categoría, Cp ≥ 1.33)", ifelse(Cp >= 1.00, "adecuada aunque mejorable (proceso de segunda categoría, 1.00 ≤ Cp < 1.33)", "insuficiente (proceso no capaz, Cp < 1.00)"))`**. En términos prácticos, la dispersión natural del proceso es considerablemente menor que la ventana de tolerancia disponible.
+
+**2. Índice de Capacidad Inferior ($C_{pi}$ = `r round(Cpi, 4)`):**
+Este índice cuantifica el desempeño del proceso con relación al Límite de Especificación Inferior. El valor obtenido ($C_{pi}$ = `r round(Cpi, 4)`) sugiere que el proceso mantiene una distancia **`r ifelse(Cpi >= 1.33, "holgada y adecuada", ifelse(Cpi >= 1.00, "suficiente", "insuficiente"))`** entre la media del proceso y el LIE.
+
+**3. Índice de Capacidad Superior ($C_{ps}$ = `r round(Cps, 4)`):**
+De manera análoga, el $C_{ps}$ evalúa la capacidad respecto al Límite de Especificación Superior. El valor de $C_{ps}$ = `r round(Cps, 4)` indica que la media del proceso se encuentra `r ifelse(Cps >= Cpi, "más cercana al LIE que al LSE, lo que revela un desplazamiento positivo (sesgo hacia valores superiores) respecto al nominal", "más cercana al LSE que al LIE, lo que revela un desplazamiento negativo respecto al nominal")`.
+
+**4. Índice de Capacidad Real ($C_{pk}$ = `r round(Cpk, 4)`):**
+El $C_{pk}$ representa el índice más conservador y realista, ya que incorpora simultáneamente el efecto de la variabilidad y del centrado del proceso. Su valor es $C_{pk}$ = **`r round(Cpk, 4)`**. Dado que $C_{pk}$ < $C_p$ (`r round(Cpk, 4)` < `r round(Cp, 4)`), se confirma que el proceso **no está perfectamente centrado** respecto al valor nominal de `r N` s. Sin embargo, el índice supera el umbral de referencia de 1.00, lo que indica que el proceso es capaz de cumplir con las especificaciones establecidas.
+
+**Categoría del Proceso:**
+Con base en los criterios de la literatura especializada en Seis Sigma y CEP, el proceso de ensamble de cubos Lego se clasifica como **`r ifelse(min(Cp, Cpk) >= 1.67, "un proceso de clase mundial (Cp, Cpk ≥ 1.67)", ifelse(min(Cp, Cpk) >= 1.33, "un proceso de primera categoría (1.33 ≤ Cp, Cpk < 1.67), apto para producción con mínima inspección", ifelse(min(Cp, Cpk) >= 1.00, "un proceso de segunda categoría (1.00 ≤ Cp, Cpk < 1.33), adecuado aunque susceptible de mejora", "un proceso no capaz (Cp o Cpk < 1.00)")))`**.
+
+---
+
+# Estudio de Estabilidad Estadística
+
+El estudio de estabilidad estadística busca determinar si el proceso de ensamble opera bajo la influencia exclusiva de causas comunes de variación, es decir, si se encuentra en estado de **control estadístico**. Para ello se emplean las cartas de control como herramienta principal de análisis.
+
+## Elaboración de las Cartas de Control del Proceso
+
+### Elección de los Tipos de Cartas de Control Adecuadas
+
+La selección del tipo de carta de control apropiado depende de la naturaleza de la característica de calidad y del esquema de muestreo empleado. En el presente estudio, los criterios de decisión son los siguientes:
+
+1.  **Naturaleza de la variable:** El tiempo de ciclo de ensamble es una **variable continua** de escala de razón, expresada en segundos. Esto determina que se utilicen cartas de control por variables, en contraposición a las cartas por atributos (p, np, c, u), que son aplicables únicamente a datos discretos o de conteo.
+
+2.  **Tamaño del subgrupo ($n = 4$):** Dado que el tamaño del subgrupo es pequeño y constante ($n = 4$, con $2 \leq n \leq 9$), el **Rango** ($R$) es el estadístico adecuado para estimar la variabilidad intragrupal. Para subgrupos de mayor tamaño ($n \geq 10$), se preferiría la carta de Desviación Estándar ($\bar{X}$–$S$).
+
+3.  **Información sobre la localización y la dispersión:** Las cartas de control por variables se emplean en pares. La carta $\bar{X}$ (Media) monitorea el centrado del proceso, detectando desplazamientos en la tendencia central; mientras que la carta $R$ (Rango) monitorea la dispersión, detectando cambios en la variabilidad del proceso.
+
+Por lo anterior, se justifica plenamente el uso de las cartas **$\bar{X}$–$R$** (Media y Rango) como el par de cartas de control adecuado para este estudio.
+
+### Interpretación de las Cartas (Límites, Puntos Fuera de Límites y Patrones Especiales)
+
+```{r cartas-control, fig.cap="Figura 3. Cartas de control X-barra y R para el proceso de ensamble de cubos Lego", fig.height=9}
+# ============================================================
+# Construcción de las cartas de control X-barra y R
+# con la librería qcc
+# ============================================================
+
+# Constantes de control para n = 4
+# A2 = 0.729, D3 = 0 (no existe LCI para R con n<7), D4 = 2.282
+A2 <- 0.729
+D3 <- 0        # Factor D3 para n=4 (LCI de R = 0)
+D4 <- 2.282    # Factor D4 para n=4
+
+# --- Cálculo manual de límites ---
+
+# Carta X-barra
+LCS_Xbar <- X_doble_barra + A2 * R_bar
+LC_Xbar  <- X_doble_barra
+LCI_Xbar <- X_doble_barra - A2 * R_bar
+
+# Carta R
+LCS_R <- D4 * R_bar
+LC_R  <- R_bar
+LCI_R <- D3 * R_bar    # = 0 para n=4
+
+# Medias y Rangos de cada subgrupo
+medias_subgrupos <- apply(obs_matrix, 1, mean)
+rangos_subgrupos <- apply(obs_matrix, 1, function(x) max(x) - min(x))
+
+# ---- CARTA X-BARRA (con qcc) ----
+qcc_xbar <- qcc(
+  data      = obs_matrix,
+  type      = "xbar",
+  title     = "Carta de Control X-barra — Tiempo de Ciclo de Ensamble",
+  xlab      = "Número de muestra",
+  ylab      = "Media del subgrupo (segundos)",
+  plot      = TRUE,
+  add.stats = TRUE
+)
+```
+
+```{r carta-R, fig.cap="Figura 4. Carta de control R para el proceso de ensamble de cubos Lego", fig.height=6}
+# ---- CARTA R (con qcc) ----
+qcc_R <- qcc(
+  data      = obs_matrix,
+  type      = "R",
+  title     = "Carta de Control R — Tiempo de Ciclo de Ensamble",
+  xlab      = "Número de muestra",
+  ylab      = "Rango del subgrupo (segundos)",
+  plot      = TRUE,
+  add.stats = TRUE
+)
+```
+
+```{r tabla-limites}
+# ============================================================
+# Tabla resumen de límites de control calculados
+# ============================================================
+limites_df <- data.frame(
+  Carta  = c("$\\bar{X}$", "$\\bar{X}$", "$\\bar{X}$", "$R$", "$R$", "$R$"),
+  Límite = c("LCS", "Línea Central (LC)", "LCI",
+             "LCS", "Línea Central (LC)", "LCI"),
+  Fórmula = c(
+    "$\\bar{\\bar{X}} + A_2 \\bar{R}$",
+    "$\\bar{\\bar{X}}$",
+    "$\\bar{\\bar{X}} - A_2 \\bar{R}$",
+    "$D_4 \\bar{R}$",
+    "$\\bar{R}$",
+    "$D_3 \\bar{R}$"
+  ),
+  Valor = round(c(LCS_Xbar, LC_Xbar, LCI_Xbar, LCS_R, LC_R, LCI_R), 4)
+)
+
+limites_df %>%
+  kable(
+    caption = "Tabla 4. Límites de control calculados para las cartas X-barra y R",
+    align   = c("c", "l", "c", "c"),
+    escape  = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width        = FALSE,
+    position          = "center"
+  ) %>%
+  row_spec(0, bold = TRUE, background = "#2980B9", color = "white") %>%
+  pack_rows("Carta X-barra", 1, 3, bold = TRUE, background = "#D6EAF8") %>%
+  pack_rows("Carta R",       4, 6, bold = TRUE, background = "#D5F5E3")
+```
+
+```{r analisis-puntos}
+# ============================================================
+# Identificación de puntos fuera de los límites de control
+# ============================================================
+
+# --- Carta X-barra ---
+puntos_fuera_xbar <- which(
+  medias_subgrupos > LCS_Xbar | medias_subgrupos < LCI_Xbar
+)
+
+# --- Carta R ---
+puntos_fuera_R <- which(
+  rangos_subgrupos > LCS_R | rangos_subgrupos < LCI_R
+)
+
+cat("=== ANÁLISIS DE PUNTOS FUERA DE CONTROL ===\n\n")
+
+# X-barra
+cat(sprintf("Carta X-barra:\n"))
+cat(sprintf("  LCI = %.4f | LC = %.4f | LCS = %.4f\n",
+            LCI_Xbar, LC_Xbar, LCS_Xbar))
+cat(sprintf("  Medias por subgrupo: %s\n",
+            paste(round(medias_subgrupos, 4), collapse = ", ")))
+if (length(puntos_fuera_xbar) == 0) {
+  cat("  >> Ningún punto fuera de los límites de control.\n\n")
+} else {
+  cat(sprintf("  >> Puntos fuera de control en muestra(s): %s\n\n",
+              paste(puntos_fuera_xbar, collapse = ", ")))
+}
+
+# Carta R
+cat(sprintf("Carta R:\n"))
+cat(sprintf("  LCI = %.4f | LC = %.4f | LCS = %.4f\n",
+            LCI_R, LC_R, LCS_R))
+cat(sprintf("  Rangos por subgrupo: %s\n",
+            paste(round(rangos_subgrupos, 4), collapse = ", ")))
+if (length(puntos_fuera_R) == 0) {
+  cat("  >> Ningún punto fuera de los límites de control.\n")
+} else {
+  cat(sprintf("  >> Puntos fuera de control en muestra(s): %s\n",
+              paste(puntos_fuera_R, collapse = ", ")))
+}
+```
+
+**Análisis de la Carta $\bar{X}$:**
+La carta de medias muestra la línea central en $\bar{\bar{X}}$ = `r round(LC_Xbar, 4)` s, con un Límite de Control Superior (LCS) de `r round(LCS_Xbar, 4)` s y un Límite de Control Inferior (LCI) de `r round(LCI_Xbar, 4)` s. `r if(length(puntos_fuera_xbar) == 0) paste0("Ningún punto de las ", k, " muestras cae fuera de los límites de control, lo que indica que el proceso opera bajo causas comunes de variación en lo que respecta a la tendencia central.") else paste0("Los puntos correspondientes a la(s) muestra(s) ", paste(puntos_fuera_xbar, collapse = ", "), " se encuentran fuera de los límites de control, lo que señala la presencia de causas asignables de variación en la tendencia central del proceso.")`
+
+**Análisis de la Carta $R$:**
+La carta de rangos presenta la línea central en $\bar{R}$ = `r round(LC_R, 4)` s, un LCS de `r round(LCS_R, 4)` s y un LCI de `r round(LCI_R, 4)` s (igual a cero, lo cual es esperado para $n = 4$ con $D_3 = 0$). `r if(length(puntos_fuera_R) == 0) "Ningún punto excede los límites de control, lo que evidencia que la dispersión intragrupal del proceso permanece estable a lo largo del tiempo de estudio." else paste0("La(s) muestra(s) ", paste(puntos_fuera_R, collapse = ", "), " presentan rangos que superan los límites de control, indicando variabilidad intragrupal inusual.")`
+
+**Patrones especiales:** Adicionalmente al criterio de puntos fuera de control, se examina visualmente la presencia de patrones no aleatorios (rachas, tendencias, ciclicidad, estratificación). Dado que el número de observaciones es reducido ($k = 10$ subgrupos), el análisis de patrones se limita a la inspección visual, sin aplicar la totalidad de las reglas de Western Electric o Nelson, cuya potencia estadística es mayor en series temporales más extensas.
+
+### Cálculo del Índice de Inestabilidad ($S_t$)
+
+El Índice de Inestabilidad ($S_t$) es un indicador cuantitativo del grado de descontrol estadístico de un proceso, expresado como el porcentaje de puntos que caen fuera de los límites de control respecto al total de puntos graficados.
+
+```{r indice-inestabilidad}
+# ============================================================
+# Cálculo del Índice de Inestabilidad (St)
+# Fórmula: St = (Puntos fuera de control / Total de puntos) × 100
+# ============================================================
+
+# Total de puntos graficados (k muestras en cada carta)
+total_puntos_xbar <- k
+total_puntos_R    <- k
+
+# Puntos fuera de control
+n_fuera_xbar <- length(puntos_fuera_xbar)
+n_fuera_R    <- length(puntos_fuera_R)
+
+# Índice de inestabilidad por carta
+St_xbar <- (n_fuera_xbar / total_puntos_xbar) * 100
+St_R    <- (n_fuera_R    / total_puntos_R)    * 100
+
+# Índice de inestabilidad global (considerando ambas cartas en conjunto)
+total_puntos_global <- total_puntos_xbar + total_puntos_R
+n_fuera_global      <- n_fuera_xbar + n_fuera_R
+St_global           <- (n_fuera_global / total_puntos_global) * 100
+
+# Tabla de resultados
+st_df <- data.frame(
+  Carta                     = c("X-barra", "R", "Global (X-barra + R)"),
+  `Total de puntos`         = c(total_puntos_xbar, total_puntos_R, total_puntos_global),
+  `Puntos fuera de control` = c(n_fuera_xbar, n_fuera_R, n_fuera_global),
+  `St (%)`                  = round(c(St_xbar, St_R, St_global), 2),
+  check.names               = FALSE
+)
+
+st_df %>%
+  kable(
+    caption = "Tabla 5. Índice de Inestabilidad (St) por carta de control",
+    align   = c("l", "c", "c", "c")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width        = FALSE,
+    position          = "center"
+  ) %>%
+  row_spec(0, bold = TRUE, background = "#2980B9", color = "white") %>%
+  row_spec(3, bold = TRUE, background = "#EBF5FB")
+```
+
+**Criterios de clasificación del $S_t$:**
+
+| Rango de $S_t$ | Clasificación del proceso |
+|:--------------:|:--------------------------|
+| $S_t = 0\%$    | Proceso en control estadístico perfecto |
+| $0\% < S_t \leq 5\%$ | Proceso razonablemente estable |
+| $5\% < S_t \leq 25\%$ | Proceso con inestabilidad moderada |
+| $S_t > 25\%$   | Proceso estadísticamente inestable |
+
+**Conclusión sobre la Estabilidad del Sistema:**
+
+El Índice de Inestabilidad calculado para la carta $\bar{X}$ es $S_{t(\bar{X})}$ = **`r St_xbar`%**, para la carta $R$ es $S_{t(R)}$ = **`r St_R`%**, y el índice global que consolida ambas cartas resulta en $S_t$ = **`r St_global`%**.
+
+`r if(St_global == 0) {
+  paste0("Con un índice de inestabilidad global del **", St_global, "%**, se concluye que el proceso de ensamble de cubos Lego se encuentra en un estado de **control estadístico pleno**. La ausencia de puntos fuera de los límites de control en ambas cartas indica que toda la variación observada es atribuible exclusivamente a causas comunes —inherentes al sistema—, sin evidencia de causas asignables de variación que perturben el proceso. En consecuencia, el proceso es estadísticamente estable y predecible dentro de los límites de control establecidos.")
+} else if(St_global <= 5) {
+  paste0("Con un índice de inestabilidad global del **", St_global, "%**, se concluye que el proceso de ensamble de cubos Lego presenta un nivel de estabilidad **razonablemente adecuado**. Sin embargo, la presencia de ", n_fuera_global, " punto(s) fuera de control indica que existe al menos una causa asignable de variación que debe ser investigada y eliminada para alcanzar un estado de control estadístico pleno.")
+} else {
+  paste0("Con un índice de inestabilidad global del **", St_global, "%**, se concluye que el proceso de ensamble de cubos Lego presenta una **inestabilidad estadística significativa**. Se identifican ", n_fuera_global, " punto(s) fuera de los límites de control, lo que constituye evidencia estadística de la presencia de causas asignables de variación que afectan el desempeño del proceso. Se recomienda implementar acciones correctivas inmediatas antes de realizar interpretaciones definitivas sobre la capacidad del proceso.")
+}`
+
+---
+
+## Resumen Ejecutivo de los Estudios
+
+```{r resumen-ejecutivo}
+# ============================================================
+# Tabla de resumen ejecutivo de los hallazgos principales
+# ============================================================
+resumen_df <- data.frame(
+  Indicador = c(
+    "Media global del proceso ($\\bar{\\bar{X}}$)",
+    "Sigma estimada ($\\hat{\\sigma}$)",
+    "Rango medio ($\\bar{R}$)",
+    "Índice $C_p$",
+    "Índice $C_{pi}$",
+    "Índice $C_{ps}$",
+    "Índice $C_{pk}$",
+    "LCS – Carta $\\bar{X}$",
+    "LCI – Carta $\\bar{X}$",
+    "LCS – Carta $R$",
+    "Puntos fuera de control ($\\bar{X}$)",
+    "Puntos fuera de control ($R$)",
+    "Índice de Inestabilidad $S_t$ (global)"
+  ),
+  Valor = c(
+    paste0(round(X_doble_barra, 4), " s"),
+    paste0(round(sigma_est, 4),     " s"),
+    paste0(round(R_bar, 4),         " s"),
+    round(Cp,  4),
+    round(Cpi, 4),
+    round(Cps, 4),
+    round(Cpk, 4),
+    paste0(round(LCS_Xbar, 4), " s"),
+    paste0(round(LCI_Xbar, 4), " s"),
+    paste0(round(LCS_R, 4),    " s"),
+    n_fuera_xbar,
+    n_fuera_R,
+    paste0(St_global, "%")
+  ),
+  Evaluación = c(
+    ifelse(abs(X_doble_barra - N) <= 0.5, "✓ Próxima al nominal", "⚠ Desviada del nominal"),
+    "— Parámetro estimado",
+    "— Parámetro estimado",
+    ifelse(Cp  >= 1.33, "✓ Proceso capaz (1ª categoría)",
+           ifelse(Cp  >= 1.00, "⚠ Proceso adecuado (2ª categoría)", "✗ Proceso no capaz")),
+    ifelse(Cpi >= 1.33, "✓ Adecuado vs. LIE", ifelse(Cpi >= 1.00, "⚠ Adecuado vs. LIE", "✗ Inadecuado vs. LIE")),
+    ifelse(Cps >= 1.33, "✓ Adecuado vs. LSE", ifelse(Cps >= 1.00, "⚠ Adecuado vs. LSE", "✗ Inadecuado vs. LSE")),
+    ifelse(Cpk >= 1.33, "✓ Proceso capaz y bien centrado",
+           ifelse(Cpk >= 1.00, "⚠ Capaz, centrado mejorable", "✗ Proceso no capaz")),
+    "— Límite de referencia",
+    "— Límite de referencia",
+    "— Límite de referencia",
+    ifelse(n_fuera_xbar == 0, "✓ Ninguno", paste0("⚠ ", n_fuera_xbar, " punto(s)")),
+    ifelse(n_fuera_R    == 0, "✓ Ninguno", paste0("⚠ ", n_fuera_R,    " punto(s)")),
+    ifelse(St_global == 0,     "✓ Proceso estable (St = 0%)",
+           ifelse(St_global <= 5, "⚠ Razonablemente estable",
+                  "✗ Proceso inestable"))
+  )
+)
+
+resumen_df %>%
+  kable(
+    caption = "Tabla 6. Resumen ejecutivo de los estudios de capacidad y estabilidad",
+    align   = c("l", "c", "l"),
+    escape  = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width        = TRUE,
+    position          = "center"
+  ) %>%
+  row_spec(0, bold = TRUE, background = "#2C3E50", color = "white") %>%
+  pack_rows("Parámetros Descriptivos del Proceso", 1, 3,
+            bold = TRUE, background = "#D6EAF8") %>%
+  pack_rows("Índices de Capacidad",                4, 7,
+            bold = TRUE, background = "#D5F5E3") %>%
+  pack_rows("Cartas de Control",                   8, 13,
+            bold = TRUE, background = "#FDEBD0")
+```
+
+---
+
+*Documento generado en R Markdown. Fecha de compilación: `r format(Sys.time(), '%d de %B de %Y, %H:%M:%S')`.*
